@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+@theme {
+  --color-jungle-50: #f0fdf4;
+  --color-jungle-100: #dcfce7;
+  --color-jungle-500: #10b981;
+  --color-jungle-600: #059669;
+  --color-jungle-700: #047857;
+  --color-jungle-800: #064e3b;
+  --color-jungle-900: #062319;
+  --color-jungle-accent: #29ab87;
+}
