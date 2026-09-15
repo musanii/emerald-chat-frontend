@@ -26,7 +26,7 @@ async function handleLogin() {
     router.push('/app')
   } else {
     // Fallback bypass for demo viewing if backend isn't live
-    router.push('/app')
+    errorMessage.value =result.message
   }
 }
 </script>

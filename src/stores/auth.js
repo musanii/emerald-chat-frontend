@@ -13,9 +13,9 @@ export const useAuthStore = defineStore("auth", () => {
   //Actions
   async function login(credentials) {
     try {
-      const response = await apiClient.post( '/login', credentials);
+      const response = await apiClient.post( '/auth/login', credentials);
 
-      token.value = response.data.token;
+      token.value = response.data.access_token;
       user.value = response.data.user;
 
       localStorage.setItem("emerald_token", token.value);
@@ -23,10 +23,14 @@ export const useAuthStore = defineStore("auth", () => {
 
       return { success: true };
     } catch (error) {
+
+      const apiMessage = error.response?.data?.errors?.email?.[0] 
+      || error.response?.data?.message 
+      || 'Invalid email or password.'
       return {
         success: false,
         message:
-          error.response?.data?.message ||
+          apiMessage ||
           "Authentication failed. Please check your credentials.",
       }
     }
@@ -36,7 +40,7 @@ export const useAuthStore = defineStore("auth", () => {
     try {
 
       const response = await apiClient.post('/register', payload)
-      token.value = response.data.token
+      token.value = response.data.access_token
       token.user = response.data.user
 
       localStorage.setItem("emerald_token", token.value);
