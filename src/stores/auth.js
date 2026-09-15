@@ -1,6 +1,6 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
-import axios from "axios";
+import apiClient from "../api/axios";
 
 export const useAuthStore = defineStore("auth", () => {
   //state
@@ -13,10 +13,7 @@ export const useAuthStore = defineStore("auth", () => {
   //Actions
   async function login(credentials) {
     try {
-      const response = await axios.post(
-        "http://localhost:8000/api/v1/login",
-        credentials,
-      );
+      const response = await apiClient.post( '/login', credentials);
 
       token.value = response.data.token;
       user.value = response.data.user;
@@ -31,7 +28,28 @@ export const useAuthStore = defineStore("auth", () => {
         message:
           error.response?.data?.message ||
           "Authentication failed. Please check your credentials.",
-      };
+      }
+    }
+  }
+
+  async function register(payload){
+    try {
+
+      const response = await apiClient.post('/register', payload)
+      token.value = response.data.token
+      token.user = response.data.user
+
+      localStorage.setItem("emerald_token", token.value);
+      localStorage.setItem("emerald_user", JSON.stringify(user.value));
+
+      return {success:true}
+      
+    } catch (error) {
+      return {
+        success:false,
+        message: error.response?.data?.message || 'Registration failed'
+      }
+      
     }
   }
 
@@ -47,6 +65,7 @@ export const useAuthStore = defineStore("auth", () => {
     token,
     isAuthenticated,
     login,
+    register,
     logout,
   };
 });
