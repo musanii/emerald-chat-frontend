@@ -26,8 +26,7 @@ const directChannels = computed(() => {
 })
 
 function handleSelectChannel(channel) {
-  chatStore.activeChannel = channel
-  chatStore.fetchMessages(channel.id)
+ chatStore.setActiveChannel(channel)
 }
 </script>
 
