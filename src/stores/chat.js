@@ -1,8 +1,6 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
 import apiClient from "../api/axios";
 import { echo } from "../plugins/echo";
-import axios from "axios";
 
 export const useChatStore = defineStore("chat", {
   state: () => ({
@@ -10,6 +8,7 @@ export const useChatStore = defineStore("chat", {
     activeChannel: null,
     messages: [],
     typingUsers: new Map(),
+    onlineUsers: [],
     loading: false,
     sending: false,
     currentChannelSubscription: null,
@@ -21,26 +20,24 @@ export const useChatStore = defineStore("chat", {
   }),
 
   actions: {
-  async setActiveChannel(channel) {
-  if (!channel) return;
-  
-  this.leaveActiveChannel();
-  this.activeChannel = channel;
+    async setActiveChannel(channel) {
+      if (!channel) return;
 
-  // Persist channel ID immediately
-  localStorage.setItem("active_channel_id", String(channel.id));
+      this.leaveActiveChannel();
+      this.activeChannel = channel;
 
-  await this.fetchMessages(channel.id);
-  this.listenToChannel(channel.id);
-},
+      localStorage.setItem("active_channel_id", String(channel.id));
+
+      await this.fetchMessages(channel.id);
+      this.listenToChannel(channel.id);
+    },
 
     listenToChannel(channelId) {
       const channelName = `channel.${channelId}`;
 
-      //join the PresenceChannel
       this.activePresenceChannel = echo
         .join(channelName)
-        //Listen for new messages
+        /* ... presence handlers ... */
         .listen(".message.sent", (e) => {
           const incomingMessage = e.message;
 
@@ -50,14 +47,21 @@ export const useChatStore = defineStore("chat", {
 
           // Handle thread reply broadcasts
           if (incomingMessage.parent_id) {
+            // 1. Update the reply count on the parent message in the main stream
+            const parentId = Number(incomingMessage.parent_id);
+            const parentMsg = this.messages.find((m) => Number(m.id) === parentId);
+
+            if (parentMsg) {
+              parentMsg.replies_count = (Number(parentMsg.replies_count) || 0) + 1;
+            }
+
+            // 2. If the thread drawer is open for this message, push the reply
             if (
               this.activeThreadMessage &&
-              this.activeThreadMessage.id === incomingMessage.parent_id
+              Number(this.activeThreadMessage.id) === parentId
             ) {
               const exists = this.activeThreadReplies.some(
-                (m) =>
-                  m.id === incomingMessage.id ||
-                  (m.status === "sending" && m.body === incomingMessage.body),
+                (m) => m.id === incomingMessage.id
               );
 
               if (!exists) {
@@ -70,26 +74,12 @@ export const useChatStore = defineStore("chat", {
 
           // Handle channel main stream broadcasts
           const existsInStream = this.messages.some(
-            (m) =>
-              m.id === incomingMessage.id ||
-              (m.status === "sending" && m.body === incomingMessage.body),
+            (m) => m.id === incomingMessage.id
           );
 
           if (!existsInStream) {
             this.messages.push(incomingMessage);
           }
-        })
-
-        //Listen for typing events
-        .listen(".user.typing", (e) => {
-          //Ignore own typing events
-          const currentUserId = JSON.parse(localStorage.getItem("user"))?.id;
-          if (e.userId === currentUserId) return;
-          //Add user to typing state and auto-remove after 3 seconds of inactivity
-          this.typingUsers.set(e.userid, e.userName);
-          setTimeout(() => {
-            this.typingUsers.delete(e.userId);
-          }, 3000);
         });
     },
 
@@ -97,6 +87,7 @@ export const useChatStore = defineStore("chat", {
       if (this.activeChannel) {
         echo.leave(`channel.${this.activeChannel.id}`);
         this.typingUsers.clear();
+        this.onlineUsers = [];
         this.activePresenceChannel = null;
       }
     },
@@ -106,7 +97,7 @@ export const useChatStore = defineStore("chat", {
       try {
         await apiClient.post(`/channels/${this.activeChannel.id}/typing`);
       } catch (error) {
-        //silently handle typing failures
+        // silently ignore
       }
     },
 
@@ -119,98 +110,91 @@ export const useChatStore = defineStore("chat", {
       }
     },
 
-async fetchChannels() {
-  this.loading = true;
-  try {
-    const response = await apiClient.get("channels");
-    this.channels = response.data.data || response.data;
+    async fetchChannels() {
+      this.loading = true;
+      try {
+        const response = await apiClient.get("channels");
+        this.channels = response.data.data || response.data;
 
-    if (this.channels.length > 0) {
-      const savedChannelId = localStorage.getItem("active_channel_id");
-      
-      // Look up saved channel by ID, otherwise fallback to index 0
-      const targetChannel = savedChannelId
-        ? this.channels.find((c) => String(c.id) === String(savedChannelId))
-        : null;
+        if (this.channels.length > 0) {
+          const savedChannelId = localStorage.getItem("active_channel_id");
 
-      const channelToSelect = targetChannel || this.channels[0];
+          const targetChannel = savedChannelId
+            ? this.channels.find((c) => String(c.id) === String(savedChannelId))
+            : null;
 
-      // Always restore via setActiveChannel to ensure Echo sub & storage persist
-      await this.setActiveChannel(channelToSelect);
-    }
-  } catch (error) {
-    console.error("Failed to fetch channels:", error);
-  } finally {
-    this.loading = false;
-  }
-},
+          const channelToSelect = targetChannel || this.channels[0];
+          await this.setActiveChannel(channelToSelect);
+        }
+      } catch (error) {
+        console.error("Failed to fetch channels:", error);
+      } finally {
+        this.loading = false;
+      }
+    },
 
-    async sendMessage(body, parentId = null) {
-      if (!this.activeChannel || !body.trim()) return;
+    async sendMessage(payloadInput = {}) {
+      let body = "";
+      let attachmentIds = [];
+      let parentId = null;
 
-      const currentUser = JSON.parse(localStorage.getItem("user")) || {
-        id: 0,
-        name: "You",
-      };
-      const tempId = `temp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      if (typeof payloadInput === "string") {
+        body = payloadInput;
+      } else if (payloadInput && typeof payloadInput === "object") {
+        body = payloadInput.body || "";
+        attachmentIds = payloadInput.attachmentIds || payloadInput.attachment_ids || [];
+        parentId = payloadInput.parentId || payloadInput.parent_id || null;
+      }
 
-      const tempMessage = {
-        id: tempId,
-        body: body,
-        channel_id: this.activeChannel.id,
-        parent_id: parentId,
-        user: currentUser,
-        created_at: new Date().toISOString(),
-        status: "sending",
-        replies_count: 0,
-      };
+      // Resolve Channel ID
+      let channelId = this.activeChannel?.id;
+      if (!channelId && this.activeThreadMessage?.channel_id) {
+        channelId = this.activeThreadMessage.channel_id;
+      }
+      if (!channelId) {
+        const savedId = localStorage.getItem("active_channel_id");
+        if (savedId) channelId = Number(savedId);
+      }
 
-      // 1. Single optimistic push to thread state
+      if (!channelId) return;
+
+      const payload = { body: body.trim() };
+
+      const validAttachments = (Array.isArray(attachmentIds) ? attachmentIds : []).filter(Boolean);
+      if (validAttachments.length > 0) {
+        payload.attachment_ids = validAttachments;
+      }
+
       if (parentId) {
-        this.activeThreadReplies.push(tempMessage);
-        this.threadReplies = this.activeThreadReplies; // keep references identical
-      } else {
-        this.messages.push(tempMessage);
+        payload.parent_id = Number(parentId);
       }
 
       try {
         const response = await apiClient.post(
-          `/channels/${this.activeChannel.id}/messages`,
-          { body, parent_id: parentId },
+          `/channels/${channelId}/messages`,
+          payload
         );
 
         const realMessage = response.data.data || response.data;
         realMessage.status = "sent";
 
-        // 2. Reconcile temporary message with server response
-        const targetArray = parentId ? this.activeThreadReplies : this.messages;
-        const index = targetArray.findIndex((m) => m.id === tempId);
-
-        if (index !== -1) {
-          targetArray[index] = realMessage;
-        } else {
-          // Prevent duplicates if not found: replace or check existing ID
-          if (!targetArray.some((m) => m.id === realMessage.id)) {
-            targetArray.push(realMessage);
-          }
-        }
-
         if (parentId) {
+          this.activeThreadReplies.push(realMessage);
           this.threadReplies = this.activeThreadReplies;
 
-          // Update parent message reply count
-          const parentMsg = this.messages.find((m) => m.id === parentId);
+          // Increment reply count on parent message in main stream
+          const parentMsg = this.messages.find((m) => Number(m.id) === Number(parentId));
           if (parentMsg) {
-            parentMsg.replies_count = (parentMsg.replies_count || 0) + 1;
+            parentMsg.replies_count = (Number(parentMsg.replies_count) || 0) + 1;
           }
+        } else {
+          this.messages.push(realMessage);
         }
+
+        return response;
       } catch (error) {
         console.error("Failed to send message:", error);
-        const targetArray = parentId ? this.activeThreadReplies : this.messages;
-        const index = targetArray.findIndex((m) => m.id === tempId);
-        if (index !== -1) {
-          targetArray[index].status = "failed";
-        }
+        throw error;
       }
     },
 
@@ -223,13 +207,20 @@ async fetchChannels() {
         targetArray[index].status = "sending";
       }
 
+      const payload = { body: tempMessage.body };
+      if (tempMessage.attachment_ids?.length) {
+        payload.attachment_ids = tempMessage.attachment_ids;
+      }
+      if (tempMessage.parent_id) {
+        payload.parent_id = tempMessage.parent_id;
+      }
+
+      const channelId = this.activeChannel?.id || tempMessage.channel_id;
+
       try {
         const response = await apiClient.post(
-          `/channels/${this.activeChannel.id}/messages`,
-          {
-            body: tempMessage.body,
-            parent_id: tempMessage.parent_id,
-          },
+          `/channels/${channelId}/messages`,
+          payload
         );
 
         const realMessage = response.data.data || response.data;
@@ -246,17 +237,18 @@ async fetchChannels() {
     },
 
     async openThread(message) {
-      if (!this.activeChannel || !message) return;
+      if (!message) return;
 
       this.activeThreadMessage = message;
       this.activeThreadReplies = [];
       this.threadReplies = [];
       this.loadingThread = true;
 
+      const channelId = this.activeChannel?.id || message.channel_id;
+
       try {
-        // Hits Route::get('/channels/{channel}/messages/{message}/thread')
         const response = await apiClient.get(
-          `/channels/${this.activeChannel.id}/messages/${message.id}/thread`,
+          `/channels/${channelId}/messages/${message.id}/thread`
         );
 
         const fetchedReplies = response.data.data || response.data;
@@ -268,6 +260,7 @@ async fetchChannels() {
         this.loadingThread = false;
       }
     },
+
     closeThread() {
       this.activeThreadMessage = null;
       this.activeThreadReplies = [];
@@ -276,18 +269,34 @@ async fetchChannels() {
 
     async sendThreadReply(body) {
       if (!this.activeThreadMessage) return;
-      await this.sendMessage(body, this.activeThreadMessage.id);
+      await this.sendMessage({
+        body: body,
+        parentId: this.activeThreadMessage.id,
+      });
     },
 
-    async fetchThreadReplies(parentId) {
-      this.loadingThread = true;
+    async uploadAttachment(file) {
+      const formData = new FormData();
+      formData.append("file", file);
+
       try {
-        const response = await apiClient.get(`/messages/${parentId}/replies`);
-        this.threadReplies = response.data.data || response.data;
+        const response = await apiClient.post("/attachments", formData, {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        });
+
+        const payload = response.data.data || response.data;
+
+        return {
+          id: payload.id || payload.file_id || payload.attachment_id,
+          name: payload.name || payload.original_name || payload.filename || file.name,
+          url: payload.url || payload.path || "",
+          mime_type: payload.mime_type || payload.type || file.type,
+        };
       } catch (error) {
-        console.error("Failed to fetch thread replies:", error);
-      } finally {
-        this.loadingThread = false;
+        console.error("Attachment upload failed:", error);
+        throw error;
       }
     },
   },
