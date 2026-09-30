@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import apiClient from "../api/axios";
 import { echo } from "../plugins/echo";
+import axios from "axios";
 
 export const useChatStore = defineStore("chat", {
   state: () => ({
@@ -260,7 +261,6 @@ export const useChatStore = defineStore("chat", {
         this.loadingThread = false;
       }
     },
-
     closeThread() {
       this.activeThreadMessage = null;
       this.activeThreadReplies = [];
