@@ -5,14 +5,16 @@ import { useChatStore } from '../stores/chat'
 import { useAuthStore } from '../stores/auth'
 import SidebarPane from '../components/chat/SidebarPane.vue'
 import MessageStreamPane from '../components/chat/MessageStreamPane.vue'
+import CreateChannelModal from '../components/CreateChannelModal.vue'
 
 const chatStore = useChatStore()
 const authStore = useAuthStore()
 
-// Use storeToRefs so activeThreadMessage and threadReplies remain reactive
+// Store state references
 const { activeThreadMessage, threadReplies, loadingThread, sendingReply } = storeToRefs(chatStore)
 
 const replyText = ref('')
+const isCreateChannelOpen = ref(false)
 
 onMounted(async () => {
   await chatStore.fetchChannels()
@@ -29,7 +31,7 @@ const handleSendReply = async () => {
 <template>
   <div class="h-screen w-screen flex bg-white font-sans overflow-hidden text-slate-800">
     <!-- Pane 1: Deep Green Sidebar -->
-    <SidebarPane />
+    <SidebarPane @open-create-channel="isCreateChannelOpen = true" />
 
     <!-- Pane 2: Main Stream Feed -->
     <MessageStreamPane />
@@ -117,5 +119,11 @@ const handleSendReply = async () => {
         </form>
       </div>
     </aside>
+
+    <!-- Create Channel Modal -->
+    <CreateChannelModal 
+      :isOpen="isCreateChannelOpen" 
+      @close="isCreateChannelOpen = false" 
+    />
   </div>
 </template>

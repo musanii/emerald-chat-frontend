@@ -299,5 +299,63 @@ export const useChatStore = defineStore("chat", {
         throw error;
       }
     },
+
+    async createChannel(payload){
+      try {
+        const response = await apiClient.post('/channels', payload);
+        const newChannel = response.data.data || response.data;
+
+        this.channels.push(newChannel);
+        await this.setActiveChannel(newChannel);
+        return {
+          success:true,
+          channel:newChannel
+        };
+        
+      } catch (error) {
+        console.error("Failed to create channel:", error)
+        return {
+          success:false,
+          message: error.response?.data?.message || "Failed to create  channel."
+        };
+      }
+
+    },
+
+    async joinChannel(channelId){
+      try {
+        const response = await apiClient.post(`/channels/${channelId}/join`);
+        const joinedChannel = response.data.data || response.data;
+
+        if(!this.channels.some((c) =>c.id === joinedChannel.id)){
+          this.channels.push(joinedChannel);
+        }
+        await this.setActiveChannel(joinedChannel);
+
+        return {success:true, channel:joinedChannel};
+        
+      } catch (error) {
+        console.error("Failed to join channel:", error);
+        return{
+          success:false,
+          message:error.response?.data?.message || "Failed to join channel."
+        };
+        
+      }
+    },
+
+    async deleteAttachment(attachmentId){
+      try {
+        await apiClient.delete(`/attachments/${attachmentId}`);
+        return {success:true};
+      } catch (error) {
+        console.error("Failed to delete atachment:", error);
+        return {
+          success:false,
+          message:error.response?.data?.message || "Failed to delete attachment."
+        }
+      }
+    }
+  
   },
 });

@@ -6,23 +6,25 @@ import { useAuthStore } from "../../stores/auth";
 const chatStore = useChatStore();
 const authStore = useAuthStore();
 
-// Filter channels based on type from the API payload
+// Filter public channels (matches type === 'public' or is_private === false / 0)
 const publicChannels = computed(() => {
-  return Array.isArray(chatStore.channels)
-    ? chatStore.channels.filter((c) => c?.type === "public")
-    : [];
+  if (!Array.isArray(chatStore.channels)) return [];
+  return chatStore.channels.filter(
+    (c) => c?.type === "public" || c?.is_private === false || c?.is_private === 0
+  );
 });
 
+// Filter private channels (matches type === 'private' or is_private === true / 1)
 const privateChannels = computed(() => {
-  return Array.isArray(chatStore.channels)
-    ? chatStore.channels.filter((c) => c?.type === "private")
-    : [];
+  if (!Array.isArray(chatStore.channels)) return [];
+  return chatStore.channels.filter(
+    (c) => c?.type === "private" || c?.is_private === true || c?.is_private === 1
+  );
 });
 
 const directChannels = computed(() => {
-  return Array.isArray(chatStore.channels)
-    ? chatStore.channels.filter((c) => c?.type === "direct")
-    : [];
+  if (!Array.isArray(chatStore.channels)) return [];
+  return chatStore.channels.filter((c) => c?.type === "direct");
 });
 
 function handleSelectChannel(channel) {
@@ -61,12 +63,18 @@ function isUserOnline(channel) {
       </div>
 
       <!-- Public Channels -->
-      <div v-if="publicChannels?.length" class="px-3 pt-4">
+      <div class="px-3 pt-4">
         <div
           class="flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1"
         >
           <span>Public Channels</span>
-          <button class="hover:text-white">+</button>
+          <button 
+            @click="$emit('open-create-channel')"
+            class="text-slate-300 hover:text-white p-1 rounded hover:bg-emerald-800/50"
+            title="Create Channel"
+          >
+            +
+          </button>
         </div>
         <div class="space-y-0.5">
           <button
@@ -89,12 +97,12 @@ function isUserOnline(channel) {
       </div>
 
       <!-- Private Channels -->
-      <div v-if="privateChannels?.length" class="px-3 pt-4">
+      <div class="px-3 pt-4">
         <div
           class="flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1"
         >
           <span>Private Channels</span>
-          <button class="hover:text-white">+</button>
+          
         </div>
         <div class="space-y-0.5">
           <button
@@ -117,7 +125,7 @@ function isUserOnline(channel) {
       </div>
 
       <!-- Direct Messages -->
-      <div v-if="directChannels?.length" class="px-3 pt-4">
+      <div v-if="directChannels.length" class="px-3 pt-4">
         <div
           class="flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1"
         >
